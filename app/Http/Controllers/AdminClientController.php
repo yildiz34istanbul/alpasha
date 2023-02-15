@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Mail;
 use App;
+use DataTables;
 
 class AdminClientController extends Controller
 {
@@ -22,10 +23,9 @@ class AdminClientController extends Controller
      */
     public function ClientIndexShow()
     {
-       // $clients = Client::all();
-		
-          $clients = Client::orderBy('created_at', 'DESC')->latest()->get();
-		//$clients = Client::orderBy('created_at', 'DESC')->paginate(25);
+        //$clients = Client::all();
+        $clients = Client::orderBy('created_at', 'DESC')->latest()->get();
+
         return view('admin.clients.index',compact('clients'));
     }
 
@@ -34,15 +34,16 @@ class AdminClientController extends Controller
 
    public function AddNewClient(Request $request)
     {
- $validated = $request->validate([
+
+        $validated = $request->validate([
             'name' => 'required|max:25',
             'password' => 'required|max:15',
             'email' => 'required|email|unique:clients,email',
             'code_number' =>'required|unique:clients|max:8',
-           'phone' => 'required|unique:clients|max:15',
-            'country' => 'required|min:3|max:50',
-            'address' => 'required|min:3|max:100',
-            'city' => 'required|min:3|max:30',
+            'phone' => 'required|unique:clients|max:14',
+            'country' => 'regex:/(^[A-Za-z0-9 ]+$)+/|max:15',
+            'address' => 'regex:/(^[A-Za-z0-9 ]+$)+/|max:255',
+            'city' => 'regex:/(^[A-Za-z0-9 ]+$)+/|max:15',
             'id_photo' => 'mimes:jpg,bmp,png'
 
         ],
@@ -70,12 +71,18 @@ class AdminClientController extends Controller
                 $data['created_at'] = Carbon::now();
 
 
+                if ($request->file('id_photo')) {
+                    $file = $request->file('id_photo');
 
+                    $filename = $request->code_number.$file->getClientOriginalName();
+                    $file->move(public_path('../../upload/client/idphoto'),$filename);
+                    $data['id_photo'] = $filename;
+                }
 
-                  if ($request->file('id_photo')) {
+                //  if ($request->file('id_photo')) {
 
-                      $data['id_photo'] = $request->file('id_photo')->store('/upload/client/idphoto');
-                  }
+                    //  $data['id_photo'] = $request->file('id_photo')->store('../../upload/client/idphoto');
+                //  }
 
                  DB::table('clients')->insert($data);
 
@@ -127,13 +134,14 @@ class AdminClientController extends Controller
 
             $update->status = $request->status;
            $update->save();
-			
-			  if($request->status==1){
+
+           if($request->status==1){
            $client = Client::find($id);
                App::setLocale($client->locale);
                Mail::to($client->email)->send(new \App\Mail\ClientActivation($client->name, $client->code_number,));
 
             }
+
 
 
        return Redirect()->route('all.clients.show')->with('success','تم تفعيل الحساب بنجاح  ');
@@ -155,6 +163,8 @@ class AdminClientController extends Controller
     public function UpdateClient(Request $request, $id)
     {
 
+
+
         try {
             $client = Client::find($id);
 
@@ -166,26 +176,22 @@ class AdminClientController extends Controller
             $client->phone = $request->phone;
             $client->code_number = $request->code_number;
             $client->locale = $request->locale;
-			$client->country = $request->country;
-            $client->city = $request->city;
-            $client->address = $request->address;
             $client->updated_at=Carbon::now();
 //            dd($request->all());
-         
-		if ($request->file('id_photo')) {
-    		$file = $request->file('id_photo');
-    		@unlink(public_path('../../upload/client/idphoto/'.$file));
-    		$filename = date('YmdHi').$file->getClientOriginalName();
-    		$file->move(public_path('../../upload/client/idphoto'),$filename);
-    		$client->id_photo = $filename;
-    	}		
-			
-// if ($request->hasFile('id_photo')) {
+
+if ($request->file('id_photo')) {
+    $file = $request->file('id_photo');
+
+    $filename = $request->code_number.$file->getClientOriginalName();
+    $file->move(public_path('../../upload/client/idphoto'),$filename);
+    $data['id_photo'] = $filename;
+}
+
+
+         //  if ($request->hasFile('id_photo')) {
           //      Storage::delete($client->id_photo);
-             //   $client->id_photo = $request->file('id_photo')->store('public/client_ids');
+          //      $client->id_photo = $request->file('id_photo')->store('upload/client/idphoto');
          //   }
-			
-			
            $client->save();
 
 
@@ -209,6 +215,126 @@ class AdminClientController extends Controller
         return Redirect()->back()->with('success','تم حذف  بنجاح ');
 
      }
+
+
+
+     ///// AJAX /////////////////////
+
+
+
+     public function ClientsAjaxAll()
+    {
+        //$clients = Client::all();
+        $clients = Client::orderBy('created_at', 'DESC')->latest()->get();
+
+        return view('admin.clients.ajax.index',compact('clients'));
+    }
+
+
+    public function GetAllClients(Request $request)
+    {
+
+        $data = Client::query();
+        return Datatables::of($data)
+        ->addColumn('action', function($row){
+            $actionBtn = '
+            <button type="button" class="btn btn-info btn-sm" data-toggle="modal"
+            data-target="#activemodal" id="activestatus" data-id="' . $row->id . '"
+            title="تفعيل الحساب"><i class="fa fa-check"></i></button>
+
+    <button type="button" class="btn btn-info btn-sm" data-toggle="modal"
+            data-target="#Notifymodal"  id="clientnotify" data-id="' . $row->id . '"
+            title="ارسال اشعار"><i class="fa fa-send"></i></button>
+
+    <button type="button" class="btn btn-info btn-sm" data-toggle="modal"
+            data-target="#edit"
+            title="تعديل البيانات"><i class="fa fa-edit"></i></button>
+
+
+    <button style="background-color: #ffc135;" type="button"
+            class="btn btn-info btn-sm"
+
+            title="عرض البيانات"><a href=""><i
+                    style="color: #ffffff;" class="fa fa-eye"></i></a></button>
+
+
+    <button type="button" class="btn btn-danger btn-sm" data-toggle="modal"
+            data-target="#delete"
+            title="حذف"><i
+                class="fa fa-trash"></i></button>
+
+
+
+            ';
+
+           return $actionBtn;
+        })
+
+
+        ->editColumn('created_at', function(Client $Client) {
+            return $Client->created_at->toDateString();
+        })
+
+        ->editColumn('image', function(Client $Client) {
+            return $Client->profile_photo_path;
+        })
+       ->rawColumns(['action'])
+
+        ->make(true);
+
+    }
+
+
+////////////////************************//////////// */
+
+//GET client DETAILS
+
+public function getClientDetails(Request $request){
+    $Client_id = $request->Client_id;
+    $ClientDetails = Client::find($Client_id);
+    return response()->json(['details'=>$ClientDetails]);
+}
+
+// End GET client DETAILS
+
+/////////********************************** */
+
+
+//UPDATE & active status
+
+
+public function ActiveStatus(Request $request){
+
+    $update = Client::find($request->id);
+   // $client_id = Client::where('code_number',$request->code_number)->first()->id;
+
+   $update->status = $request->status;
+
+   $query= $update->save();
+   if($request->status==1){
+   $client = Client::find($request->id);
+       App::setLocale($client->locale);
+       Mail::to($client->email)->send(new \App\Mail\ClientActivation($client->name, $client->code_number,));
+
+    }
+
+
+        if($query){
+            return response()->json(['code'=>1, 'msg'=>'client have Been Active']);
+        }else{
+            return response()->json(['code'=>0, 'msg'=>'Something went wrong']);
+        }
+
+}
+
+  // END UPDATE & Active Status
+/////////**************************** *///////////////
+
+
+
+
+
+
 
 
 
@@ -281,4 +407,21 @@ class AdminClientController extends Controller
 //        event(new NotificationEvent($m,"client", $c->id, $trace->tracking_number, $trace->tacking_status_id));
 //        Mail::to($c->email)->send(new \App\Mail\WelcomeMail($c->name, $trace->tracking_number,$trace->status->Status_Name));
     }
+
+    public function SendNotify(Request $request){
+        $c=Client::findOrFail($request->id);
+        Notification::send($c, new ClientNotify($request->text,'client',$request->id));
+       // return Redirect()->route('all.clients.show')->with('success','تم الارسال  بنجاح ');
+       $query = $request->text;
+       if($query != null){
+        return response()->json(['code'=>1, 'msg'=>'Send Notification to Client']);
+    }else{
+        return response()->json(['code'=>0, 'msg'=>'Something went wrong']);
+    }
+//        event(new NotificationEvent($m,"client", $c->id, $trace->tracking_number, $trace->tacking_status_id));
+//        Mail::to($c->email)->send(new \App\Mail\WelcomeMail($c->name, $trace->tracking_number,$trace->status->Status_Name));
+    }
+
+
+
 }
